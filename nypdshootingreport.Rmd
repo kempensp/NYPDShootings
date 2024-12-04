@@ -1,0 +1,184 @@
+---
+title: "NYPD Shooting Incident Data Report"
+author: "S. Kempen"
+date: "2023-11-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# NYPD Historic Shooting Incident Data Analysis
+## Introduction
+This report will use the NYPD Shootings data file found at <https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic> in an attempt to identify patterns over time, including disaggregating by bourough, gender and race.
+
+## Initial setup
+We are importing the tidyverse and lubridate packages to help us set up our analysis:
+```{r setuppackage}
+library(tidyverse)
+library(lubridate)
+```
+
+## Data Importing
+
+This data is imported via <https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic>
+
+```{r import_data}
+url_in <-"https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+nypd_shootings <- read_csv(url_in)
+```
+
+Taking an initial look at the data...
+```{r assess_data}
+summary(nypd_shootings)
+nypd_shootings
+```
+
+## Data formatting/cleaning
+We need to convert the OCCUR_DATE into an actual date...
+```{r date_conversion}
+
+nypd_shootings_clean <- nypd_shootings
+nypd_shootings_clean$OCCUR_DATE <- mdy(nypd_shootings_clean$OCCUR_DATE)
+summary(nypd_shootings_clean)
+```
+
+###I would like to investigate the impacts of time, location, race, and gender on the number of shooting victims in New York City
+I intend to focus on victim demographics and borough and precinct information along with date/time, so I will remove columns that don't apply and likely have substantial missing data:
+```{r column_removal1}
+nypd_shootings_clean <- subset( nypd_shootings_clean, select = -c(LOC_OF_OCCUR_DESC, JURISDICTION_CODE, LOC_CLASSFCTN_DESC, LOCATION_DESC, X_COORD_CD, Y_COORD_CD,  Latitude,   Longitude , Lon_Lat ) )
+nypd_shootings_clean
+```
+It would be help to compare shootings over years, so I will mutate the table to extract the year.
+```{r extract_year}
+nypd_shootings_clean$YEAR<- year(nypd_shootings_clean$OCCUR_DATE)
+```
+
+I also want to identify where I would have missing values...
+```{r missing_value_count}
+sapply(nypd_shootings_clean, function(x) sum(is.na(x)))
+```
+
+While there is missing data in perpetrator age group, sex, and race, it may be useful to maintain information about these fields where it is available with the potential to identify some distinctions where the perpetrator has not been identified compared to where it has.  I will set this up into two tables, removing the perpetrator age group as there appears to be more entries where this is missing compared to perpetrator sex and race
+```{r remove_perp_age}
+nypd_shootings_clean <- subset( nypd_shootings_clean, select = -c(PERP_AGE_GROUP) )
+nypd_shootings_clean
+```
+```{r split_perp_found}
+nypd_shootings_unsolved <- nypd_shootings_clean %>% filter(is.na(PERP_SEX))
+summary(nypd_shootings_unsolved)
+sapply(nypd_shootings_unsolved, function(x) sum(is.na(x)))
+
+nypd_shootings_solved <- nypd_shootings_clean %>% filter(!is.na(PERP_SEX))
+summary(nypd_shootings_solved)
+sapply(nypd_shootings_solved, function(x) sum(is.na(x)))
+```
+
+My nypd_shootings_unsolved data set has all PERP_SEX and PERP_RACE missing as intended and there are otherwise no other missing values.
+
+## Data analysis/visualization
+I would like to get a year by year count of the number of shootings to start...
+```{r shootings_by_year}
+nypd_shootings_by_year <- nypd_shootings_clean %>% 
+                          group_by(YEAR) %>%
+                          summarize(shooting_count=n())
+nypd_shootings_by_year
+nypd_shootings_by_year %>%
+  ggplot(aes(x=YEAR,y=shooting_count)) +
+  geom_line(aes(color="shooting_count")) +
+  geom_point(aes(color="shooting_count")) +
+  labs(title="NYPD Shootings by Year")
+```
+The graph suggests a decline from 2011 to 2019, with a spike in shootings in 2020 and 2021 before declining in 2022 and 2023.  Is this consistent among bouroughs?
+
+```{r shootings_by_bourough}
+nypd_shootings_by_borough <- nypd_shootings_clean %>% 
+                          group_by(YEAR,BORO) %>%
+                          summarize(shooting_count=n())
+nypd_shootings_by_borough
+nypd_shootings_by_borough %>%
+  ggplot(aes(x=YEAR,y=shooting_count)) +
+  geom_line(aes(group=BORO, color=BORO)) +
+  geom_point(aes(group=BORO, color=BORO)) +
+  labs(title="NYPD Shootings by Year")
+```
+
+This appears to follow a similar pattern for each borough with the exception of Staten Island which has the fewest number of shootings.  Is there a similar pattern based on gender or race?
+
+```{r shootings_by_victim_race_or_sex}
+nypd_shootings_by_victim_race <- nypd_shootings_clean %>% 
+                          group_by(YEAR,VIC_RACE) %>%
+                          summarize(shooting_count=n())
+nypd_shootings_by_victim_race
+nypd_shootings_by_victim_race %>%
+  ggplot(aes(x=YEAR,y=shooting_count)) +
+  geom_line(aes(group=VIC_RACE, color=VIC_RACE)) +
+  geom_point(aes(group=VIC_RACE, color=VIC_RACE)) +
+  labs(title="NYPD Shootings by Year")
+nypd_shootings_by_victim_sex <- nypd_shootings_clean %>% 
+                          group_by(YEAR,VIC_SEX) %>%
+                          summarize(shooting_count=n())
+nypd_shootings_by_victim_sex
+nypd_shootings_by_victim_sex %>%
+  ggplot(aes(x=YEAR,y=shooting_count)) +
+  geom_line(aes(group=VIC_SEX, color=VIC_SEX)) +
+  geom_point(aes(group=VIC_SEX, color=VIC_SEX)) +
+  labs(title="NYPD Shootings by Year")
+```
+
+A similar pattern appears for men and for black shooting victims and potentially for black Hispanic or white Hispanic demographics.  Finally, it may be useful to compare percentages of shooting victims by bourough, race, or gender:
+```{r shootings by percentage}
+nypd_shootings_by_borough_percentage <- nypd_shootings_by_borough %>%
+  group_by(YEAR) %>%
+  mutate(percent = shooting_count/sum(shooting_count)*100)
+nypd_shootings_by_borough_percentage
+nypd_shootings_by_borough_percentage %>%
+  ggplot(aes(x=YEAR,y=percent)) +
+  geom_line(aes(group=BORO, color=BORO)) +
+  geom_point(aes(group=BORO, color=BORO)) +
+  labs(title="NYPD Shootings by Year, Percentages by bourough")
+
+nypd_shootings_by_sex_percentage <- nypd_shootings_by_victim_sex %>%
+  group_by(YEAR) %>%
+  mutate(percent = shooting_count/sum(shooting_count)*100)
+nypd_shootings_by_sex_percentage
+nypd_shootings_by_sex_percentage %>%
+  ggplot(aes(x=YEAR,y=percent)) +
+  geom_line(aes(group=VIC_SEX, color=VIC_SEX)) +
+  geom_point(aes(group=VIC_SEX, color=VIC_SEX)) +
+  labs(title="NYPD Shootings by Year, Percentages by Sex/Gender")
+       
+nypd_shootings_by_race_percentage <- nypd_shootings_by_victim_race %>%
+  group_by(YEAR) %>%
+  mutate(percent = shooting_count/sum(shooting_count)*100)
+nypd_shootings_by_race_percentage
+nypd_shootings_by_race_percentage %>%
+  ggplot(aes(x=YEAR,y=percent)) +
+  geom_line(aes(group=VIC_RACE, color=VIC_RACE)) +
+  geom_point(aes(group=VIC_RACE, color=VIC_RACE)) +
+  labs(title="NYPD Shootings by Year, Percentages by Race")
+```
+
+## Regression modeling
+We notice that black victims are by far the highest percentage of shooting victims in New York City among racial categories (while men are a vast majority of shooting victims as well).  To delve further, consider a linear regression model over time considering gender and considering race as factors:
+```{r}
+
+lmod_gender=lm(shooting_count~YEAR+VIC_SEX,data=nypd_shootings_by_victim_sex)
+summary(lmod_gender)
+
+lmod_race=lm(shooting_count~YEAR+VIC_RACE,data=nypd_shootings_by_victim_race)
+summary(lmod_race)
+
+lmod_genderpercent=lm(percent~YEAR+VIC_SEX,data=nypd_shootings_by_sex_percentage)
+summary(lmod_genderpercent)
+
+lmod_racepercent=lm(percent~YEAR+VIC_RACE,data=nypd_shootings_by_race_percentage)
+summary(lmod_racepercent)
+```
+
+## Results
+These models suggest that when looking at shooting counts, there is a relatively small but statistically significant coefficient for year over time (about 5 to 14 fewer shootings per year).  However, male, black, black Hispanic, and white Hispanic victims have higher coefficients with smaller p-values.  When looking at percentages, the year has no statistically significant impact, but there is a consistent and statistically significant (at alpha=0.05 levels) of male victims comprising 90 percent of shooting victims, black victims comprising 68.3 percent of victims, white Hispanics at 12.7% of victims, and black Hispanics at 7.3 percent of victims.
+
+## Final reflections, biases, and considerations
+There are a few things to consider in this analysis.  The categorization of shooting victims' racial categories distinguish between Black Hispanic, White Hispanic, Black, and White has some impact on the total and percentage calculations.  With many public and political discussions of equity in the criminal justice system and as a person with police officers in my family, who follows online news reports locally and nationally, and is a white person teaching in an urban school setting with 90% of my student body being Black, I need to be mindful of the equity implications towards people in New York and in my own community (whether they are victims, perpetrators, both, or neither).  Some of my own personal online research and social media following on these topics and my choices in identifying visualizations and models to examine are likely reflective of these experiences.  I do find it interesting (though not particularly unsurprising) that a vast majority of shootings have male victims, but wonder about those implications toward the criminal justice system and related aspects of life.
